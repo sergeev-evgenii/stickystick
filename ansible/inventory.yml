@@ -1,0 +1,28 @@
+---
+all:
+  hosts:
+    production:
+      ansible_host: 79.137.248.205
+      ansible_user: root
+      ansible_ssh_pass: 670iSRQrzdo5
+      # Переопределение переменных для production
+      frontend_image_tag: "v1.0.0"
+      backend_image_tag: "v1.0.0"
+      frontend_port: 8090
+      backend_port: 5000
+      nginx_domain: "stickystick.ru"
+      project_path: "/opt/stickystick"
+
+      # HTTP Basic Auth для защищенных локаций
+      nginx_auth_username: ""  # Имя пользователя для HTTP Basic Auth
+      nginx_auth_password: ""  # Пароль (рекомендуется использовать vault)
+
+      # Backend environment variables (можно переопределить для production)
+      backend_env:
+        DATABASE_URL: "postgres://stickystick:stickystick@localhost:5433/stickystick?sslmode=disable"
+        JWT_SECRET: "fivie3Diet"
+        PORT: 7000
+        ENV: production
+        UPLOAD_DIR: "./uploads"
+        BASE_URL: "http://localhost:8080"
+

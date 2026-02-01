@@ -1,0 +1,373 @@
+---
+- name: Deploy tropi_service containers
+  hosts: all
+  become: yes
+  vars:
+
+    # Docker Registry настройки
+    docker_registry_url: "ghcr.io"  # Например: "registry.example.com" или "docker.io"
+    docker_registry_username: !vault |
+              $ANSIBLE_VAULT;1.1;AES256
+              34626136333661376361313464346439653038373961613262333532313437373737363236303664
+              6230353333316562393133333034623266616262393535340a303830646238653635383937373562
+              38623434346335663734646630326265336163643663663130353665616364643139353762353836
+              6665623561626565660a343731353937336537666632383164383033366464393664333033353363
+              3630
+    docker_registry_token: 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
+
+    # Имена образов (полные имена с registry если нужно)
+    frontend_image_name: "{{ docker_registry_url }}/sergeev-evgenii/stickystick/frontend"
+    backend_image_name: "{{ docker_registry_url }}/sergeev-evgenii/stickystick/backend"
+
+    # Имена контейнеров
+    frontend_container_name: "stickystick_frontend"
+    backend_container_name: "stickystick_backend"
+    postgres_container_name: "stickystick_postgres"
+
+    # PostgreSQL настройки
+    postgres_image: "postgres:17"
+    postgres_db_name: "stickystick"
+    postgres_superuser: "postgres"
+    postgres_superuser_password: "postgres"
+    postgres_user: "stickystick"
+    postgres_password: "stickystick"
+    postgres_port: "5433"
+    postgres_data_volume: "stickystick_pg_data"
+
+    # Доменное имя для nginx
+    nginx_domain: "stickystick.ru"
+    nginx_config_path: "/etc/nginx/conf.d/{{ nginx_domain }}.conf"
+
+    # Путь к проекту на сервере
+    project_path: "/opt/stickystick_service"
+
+    # Путь к .env файлу для backend (внутри монтируемой директории)
+    backend_env_file: "{{ project_path }}/backend/app/.env"
+
+    # HTTP Basic Auth для защищенных локаций
+    nginx_auth_username: !vault |
+              $ANSIBLE_VAULT;1.1;AES256
+              33393934396133383437663834613130616339616438616138623938666536326461346536393263
+              6662663636353334643765353063633131366430353131620a353436366136613861376339666561
+              34643465323031613737323638626532323561376265333038643430376538343564323735373738
+              3764643464323936320a313364363037646665383962363732393837623133613431363464616537
+              3464
+
+    nginx_auth_password: !vault |
+              $ANSIBLE_VAULT;1.1;AES256
+              31313063393235613464616166306236373561316564356436646531666530613032306561323730
+              3339623738666666636664346630356637623565343539610a643139303635643064353036626138
+              64613265366231613639376365363762633735643266623634323534383063373061303534386233
+              3861326334306335340a373964623235643332626564373739313339386336393761353131386464
+              3832
+
+    nginx_htpasswd_path: "/etc/nginx/.htpasswd"
+
+  tasks:
+    - name: Install Docker prerequisites
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg-agent
+          - software-properties-common
+        state: present
+
+    - name: Add Docker GPG key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Build full image names
+      set_fact:
+        frontend_full_image: "{{ frontend_image_name }}:{{ frontend_image_tag }}"
+        backend_full_image: "{{ backend_image_name }}:{{ backend_image_tag }}"
+
+
+    - name: Add Docker repository
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+
+    - name: Install Docker
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+        state: present
+        update_cache: yes
+
+    - name: Ensure Docker service is running
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    # PostgreSQL tasks
+    - name: Check if postgres container exists
+      command: docker ps -a --filter "name={{ postgres_container_name }}" --format "{{ '{{' }}.Names{{ '}}' }}"
+      register: postgres_container_check
+      changed_when: false
+      failed_when: false
+
+    - name: Stop and remove old postgres container
+      shell: |
+        docker stop {{ postgres_container_name }} || true
+        docker rm {{ postgres_container_name }} || true
+      when: postgres_container_check.stdout == postgres_container_name
+      ignore_errors: yes
+
+    - name: Create postgres data volume if it doesn't exist
+      command: docker volume create {{ postgres_data_volume }}
+      register: postgres_volume_result
+      changed_when: postgres_volume_result.rc == 0
+      failed_when: postgres_volume_result.rc != 0 and "already exists" not in postgres_volume_result.stderr
+      ignore_errors: yes
+
+    - name: Ensure directory exists
+      file:
+        path: "{{ project_path }}/{{ postgres_data_volume }}"
+        state: directory
+        owner: "root"
+        group: "root"
+        mode: '0755'
+
+    - name: Ensure directory with uploads exists
+      file:
+        path: "{{ project_path }}/uploads"
+        state: directory
+        owner: "root"
+        group: "root"
+        mode: '0755'
+
+    - name: Start postgres container
+      docker_container:
+        name: "{{ postgres_container_name }}"
+        image: "{{ postgres_image }}"
+        state: started
+        restart_policy: always
+        # Проброс порта
+        ports:
+          - "5433:5432"  # 5433 на хосте → 5432 в контейнере
+        env:
+          POSTGRES_USER: "{{ postgres_superuser }}"
+          POSTGRES_PASSWORD: "{{ postgres_superuser_password }}"
+          POSTGRES_DB: "{{ postgres_db_name }}"
+        volumes:
+          - "{{ project_path }}/{{ postgres_data_volume }}:/var/lib/postgresql/data"
+      register: postgres_container
+
+    - name: Wait for postgres to be ready
+      wait_for:
+        host: localhost
+        port: "{{ postgres_port }}"
+        delay: 5
+        timeout: 60
+      when: postgres_container.changed
+
+    - name: Check if postgres user stickystick exists
+      shell: |
+        docker exec {{ postgres_container_name }} psql -U {{ postgres_superuser }} -d {{ postgres_db_name }} -tAc "SELECT 1 FROM pg_roles WHERE rolname='{{ postgres_user }}';"
+      register: user_exists_check
+      changed_when: false
+      failed_when: false
+
+    - name: Create postgres user stickystick
+      shell: |
+        docker exec {{ postgres_container_name }} psql -U {{ postgres_superuser }} -d {{ postgres_db_name }} -c "CREATE USER {{ postgres_user }} WITH PASSWORD '{{ postgres_password }}';"
+      when: user_exists_check.stdout.strip() != "1"
+      register: create_user_result
+      changed_when: create_user_result.rc == 0
+      failed_when: create_user_result.rc != 0
+
+    - name: Update postgres user stickystick password
+      shell: |
+        docker exec {{ postgres_container_name }} psql -U {{ postgres_superuser }} -d {{ postgres_db_name }} -c "ALTER USER {{ postgres_user }} WITH PASSWORD '{{ postgres_password }}';"
+      when: user_exists_check.stdout.strip() == "1"
+      register: update_user_password_result
+      changed_when: update_user_password_result.rc == 0
+      failed_when: update_user_password_result.rc != 0
+
+    - name: Grant all privileges on database to stickystick user
+      shell: |
+        docker exec {{ postgres_container_name }} psql -U {{ postgres_superuser }} -d {{ postgres_db_name }} -c "GRANT ALL PRIVILEGES ON DATABASE {{ postgres_db_name }} TO {{ postgres_user }};"
+      register: grant_db_result
+      changed_when: grant_db_result.rc == 0
+      failed_when: grant_db_result.rc != 0
+
+    - name: Grant all privileges on schema public to stickystick user
+      shell: |
+        docker exec {{ postgres_container_name }} psql -U {{ postgres_superuser }} -d {{ postgres_db_name }} -c "GRANT ALL ON SCHEMA public TO {{ postgres_user }};"
+      register: grant_schema_result
+      changed_when: grant_schema_result.rc == 0
+      failed_when: grant_schema_result.rc != 0
+
+    - name: Grant all privileges on all tables in schema public to stickystick user
+      shell: |
+        docker exec {{ postgres_container_name }} psql -U {{ postgres_superuser }} -d {{ postgres_db_name }} -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO {{ postgres_user }};"
+      register: grant_tables_result
+      changed_when: grant_tables_result.rc == 0
+      failed_when: grant_tables_result.rc != 0
+
+    - name: Grant all privileges on all sequences in schema public to stickystick user
+      shell: |
+        docker exec {{ postgres_container_name }} psql -U {{ postgres_superuser }} -d {{ postgres_db_name }} -c "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO {{ postgres_user }};"
+      register: grant_sequences_result
+      changed_when: grant_sequences_result.rc == 0
+      failed_when: grant_sequences_result.rc != 0
+
+    - name: Set default privileges for stickystick user on schema public
+      shell: |
+        docker exec {{ postgres_container_name }} psql -U {{ postgres_superuser }} -d {{ postgres_db_name }} -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO {{ postgres_user }};"
+        docker exec {{ postgres_container_name }} psql -U {{ postgres_superuser }} -d {{ postgres_db_name }} -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO {{ postgres_user }};"
+      register: set_default_privileges_result
+      changed_when: set_default_privileges_result.rc == 0
+      failed_when: set_default_privileges_result.rc != 0
+
+    - name: Check if frontend container exists
+      command: docker ps -a --filter "name={{ frontend_container_name }}" --format "{{ '{{' }}.Names{{ '}}' }}"
+      register: frontend_container_check
+      changed_when: false
+      failed_when: false
+
+    - name: Stop and remove old frontend container
+      shell: |
+        docker stop {{ frontend_container_name }} || true
+        docker rm {{ frontend_container_name }} || true
+      when: frontend_container_check.stdout == frontend_container_name
+      ignore_errors: yes
+
+    - name: Check if backend container exists
+      command: docker ps -a --filter "name={{ backend_container_name }}" --format "{{ '{{' }}.Names{{ '}}' }}"
+      register: backend_container_check
+      changed_when: false
+      failed_when: false
+
+    - name: Stop and remove old backend container
+      shell: |
+        docker stop {{ backend_container_name }} || true
+        docker rm {{ backend_container_name }} || true
+      when: backend_container_check.stdout == backend_container_name
+      ignore_errors: yes
+
+    - name: Login to Docker registry
+      shell: |
+        echo "{{ docker_registry_token }}" | docker login {{ docker_registry_url }} -u "{{ docker_registry_username }}" --password-stdin
+      when: docker_registry_url != "" and docker_registry_username != "" and docker_registry_token != ""
+
+    - name: Pull frontend image
+      docker_image:
+        name: "{{ frontend_full_image }}"
+        source: pull
+        force_source: yes
+
+    - name: Pull backend image
+      docker_image:
+        name: "{{ backend_full_image }}"
+        source: pull
+        force_source: yes
+
+    - name: Copy single file
+      copy:
+        src: configs/backend/env
+        dest: "{{ project_path }}/backend_env"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Copy single file
+      copy:
+        src: configs/backend/env
+        dest: "{{ project_path }}/backend_env"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Start backend container
+      docker_container:
+        name: "{{ backend_container_name }}"
+        image: "{{ backend_full_image }}"
+        state: started
+        restart_policy: always
+        network_mode: host
+        volumes:
+          - "{{ project_path }}/backend_env:/app/.env"
+          - "{{ project_path }}/uploads:/app/uploads"
+      register: backend_container
+
+    - name: Start frontend container
+      docker_container:
+        name: "{{ frontend_container_name }}"
+        image: "{{ frontend_full_image }}"
+        state: started
+        restart_policy: always
+        network_mode: host
+      register: frontend_container
+
+    - name: Ensure nginx is installed
+      apt:
+        name: nginx
+        state: present
+        update_cache: yes
+      when: ansible_os_family == "Debian"
+
+    - name: Ensure nginx service is running
+      systemd:
+        name: nginx
+        state: started
+        enabled: yes
+
+    - name: Create nginx enabled directory if it doesn't exist
+      file:
+        path: /etc/nginx/conf.d
+        state: directory
+        mode: '0755'
+
+    - name: Install apache2-utils for htpasswd
+      apt:
+        name: apache2-utils
+        state: present
+        update_cache: yes
+      when: ansible_os_family == "Debian" and nginx_auth_username != "" and nginx_auth_password != ""
+
+    - name: Install required Python libraries
+      apt:
+        name: python3-passlib
+        state: present
+      become: yes
+      when: ansible_os_family == "Debian"
+
+    - name: Create htpasswd file for nginx
+      htpasswd:
+        path: "{{ nginx_htpasswd_path }}"
+        name: "{{ nginx_auth_username }}"
+        password: "{{ nginx_auth_password }}"
+        owner: root
+        group: root
+        mode: '0644'
+        create: yes
+      when: nginx_auth_username != "" and nginx_auth_password != ""
+      notify: reload nginx
+
+    - name: Deploy nginx configuration
+      template:
+        src: "configs/nginx/{{ nginx_domain }}.conf.j2"
+        dest: "{{ nginx_config_path }}"
+        mode: '0644'
+        backup: yes
+      notify: reload nginx
+
+    - name: Test nginx configuration
+      command: nginx -t
+      register: nginx_test_result
+      changed_when: false
+      failed_when: nginx_test_result.rc != 0
+
+  handlers:
+    - name: reload nginx
+      systemd:
+        name: nginx
+        state: reloaded
+
