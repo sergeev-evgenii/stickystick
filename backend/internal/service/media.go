@@ -22,6 +22,8 @@ import (
 type MediaService interface {
 	SaveFile(file *multipart.FileHeader, mediaType string) (string, error)
 	GetFileURL(filename string) string
+	// URLToPath преобразует публичный URL (напр. /uploads/videos/xxx.mp4) в абсолютный путь на диске.
+	URLToPath(publicURL string) string
 	DeleteFile(filename string) error
 	ValidateFileType(file *multipart.FileHeader, allowedTypes []string) error
 	GetMediaType(filename string) string
@@ -133,7 +135,13 @@ func (s *mediaService) saveFileDirect(file *multipart.FileHeader, fullPath, subD
 		return "", fmt.Errorf("failed to save file: %w", err)
 	}
 
-	return filepath.Join(subDir, filename), nil
+	return s.relativePath(subDir, filename), nil
+}
+
+// relativePath возвращает относительный путь для хранения в БД (videos/xxx.mp4).
+// Префикс /uploads/ добавляется nginx при отдаче файлов.
+func (s *mediaService) relativePath(subDir, filename string) string {
+	return subDir + "/" + filename
 }
 
 // saveAndCompressImage сохраняет и сжимает изображение
@@ -164,7 +172,7 @@ func (s *mediaService) saveAndCompressImage(file *multipart.FileHeader, fullPath
 		}
 	}
 
-	return filepath.Join(subDir, filename), nil
+	return s.relativePath(subDir, filename), nil
 }
 
 // saveAndCompressVideo сохраняет и сжимает видео
@@ -203,7 +211,7 @@ func (s *mediaService) saveAndCompressVideo(file *multipart.FileHeader, fullPath
 	// Удаляем временный файл
 	os.Remove(tempPath)
 
-	return filepath.Join(subDir, filename), nil
+	return s.relativePath(subDir, filename), nil
 }
 
 // saveAndCompressGif сохраняет и сжимает GIF
@@ -242,7 +250,7 @@ func (s *mediaService) saveAndCompressGif(file *multipart.FileHeader, fullPath, 
 	// Удаляем временный файл
 	os.Remove(tempPath)
 
-	return filepath.Join(subDir, filename), nil
+	return s.relativePath(subDir, filename), nil
 }
 
 // compressImage сжимает изображение
@@ -362,20 +370,41 @@ func (s *mediaService) copyFile(srcPath, dstPath string) error {
 	return err
 }
 
+// URLToPath преобразует публичный URL вида /uploads/videos/xxx.mp4 (или полный https://...)
+// в абсолютный путь к файлу на диске.
+func (s *mediaService) URLToPath(publicURL string) string {
+	if publicURL == "" {
+		return ""
+	}
+	// Убираем базовый URL, если он там есть
+	relative := publicURL
+	if strings.HasPrefix(relative, s.baseURL) {
+		relative = strings.TrimPrefix(relative, s.baseURL)
+	}
+	// Убираем ведущий /uploads/
+	relative = strings.TrimPrefix(relative, "/uploads/")
+	return filepath.Join(s.uploadDir, relative)
+}
+
 func (s *mediaService) GetFileURL(filename string) string {
 	if filename == "" {
 		return ""
 	}
-	// Заменяем обратные слеши на прямые для URL
+	// Заменяем обратные слеши на прямые для URL. Возвращаем относительный путь /uploads/...
 	urlPath := strings.ReplaceAll(filename, "\\", "/")
-	return fmt.Sprintf("%s/uploads/%s", s.baseURL, urlPath)
+	return "/uploads/" + urlPath
 }
 
 func (s *mediaService) DeleteFile(filename string) error {
 	if filename == "" {
 		return nil
 	}
-	
-	fullPath := filepath.Join(s.uploadDir, filename)
+	// filename может быть относительным путём /uploads/videos/xxx.mp4 или старым форматом videos/xxx.mp4
+	var fullPath string
+	if strings.HasPrefix(filename, "/uploads/") {
+		fullPath = s.URLToPath(filename)
+	} else {
+		fullPath = filepath.Join(s.uploadDir, filename)
+	}
 	return os.Remove(fullPath)
 }

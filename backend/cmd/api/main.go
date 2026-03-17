@@ -3,13 +3,13 @@ package main
 import (
 	"log"
 	"net/http"
-	"os"
 
 	"sticky-stick/backend/internal/config"
 	"sticky-stick/backend/internal/handler"
 	"sticky-stick/backend/internal/middleware"
 	"sticky-stick/backend/internal/repository"
 	"sticky-stick/backend/internal/service"
+	"sticky-stick/backend/internal/store"
 
 	"github.com/gin-gonic/gin"
 )
@@ -38,20 +38,18 @@ func main() {
 	// Initialize services
 	services := service.NewServices(repos, cfg)
 
+	// Хранилище «просмотренных» видео по зрителю (пока в памяти)
+	seenStore := store.NewSeenStore()
+
 	// Initialize handlers
-	handlers := handler.NewHandlers(services)
+	handlers := handler.NewHandlers(services, seenStore)
 
 	// Setup router
 	router := setupRouter(handlers, cfg)
 
 	// Start server
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "5000"
-	}
-
-	log.Printf("Server starting on port %s", port)
-	if err := router.Run(":" + port); err != nil {
+	log.Printf("Server starting on port %s", cfg.Port)
+	if err := router.Run(":" + cfg.Port); err != nil {
 		log.Fatal("Failed to start server:", err)
 	}
 }
@@ -99,19 +97,42 @@ func setupRouter(h *handler.Handlers, cfg *config.Config) *gin.Engine {
 		// Video routes
 		videos := api.Group("/videos")
 		{
-			videos.GET("", middleware.OptionalAuthMiddleware(cfg), h.Video.GetFeed)                    // Публичный доступ (с опциональной авторизацией для админов)
-			videos.GET("/:id", middleware.OptionalAuthMiddleware(cfg), h.Video.GetVideo)                // Публичный доступ (с опциональной авторизацией для админов)
-			videos.POST("", middleware.AuthMiddleware(cfg), h.Video.UploadVideo)           // Требует авторизации
-			videos.POST("/upload", middleware.AuthMiddleware(cfg), h.Video.UploadMedia)    // Требует авторизации
-			videos.DELETE("/:id", middleware.AuthMiddleware(cfg), h.Video.DeleteVideo)    // Требует авторизации
-			videos.POST("/:id/like", middleware.AuthMiddleware(cfg), h.Video.LikeVideo)    // Требует авторизации
-			videos.DELETE("/:id/like", middleware.AuthMiddleware(cfg), h.Video.UnlikeVideo) // Требует авторизации
-			videos.POST("/:id/comment", middleware.AuthMiddleware(cfg), h.Video.AddComment) // Требует авторизации
-			
-			// Модерация (только для админов)
+			videos.GET("", middleware.OptionalAuthMiddleware(cfg), h.Video.GetFeed)
+			videos.POST("", middleware.AuthMiddleware(cfg), h.Video.UploadVideo)
+			videos.POST("/upload", middleware.AuthMiddleware(cfg), h.Video.UploadMedia)
+
+			// Модерация — статические пути ОБЯЗАТЕЛЬНО до /:id
 			videos.GET("/moderation/pending", middleware.AuthMiddleware(cfg), h.Video.GetPendingModeration)
+			videos.GET("/moderation/approved", middleware.AuthMiddleware(cfg), h.Video.GetApproved)
+			videos.GET("/moderation/hidden", middleware.AuthMiddleware(cfg), h.Video.GetHidden)
+
+			// Параметрические пути
+			videos.GET("/:id", middleware.OptionalAuthMiddleware(cfg), h.Video.GetVideo)
+			videos.DELETE("/:id", middleware.AuthMiddleware(cfg), h.Video.DeleteVideo)
+			videos.PUT("/:id", middleware.AuthMiddleware(cfg), h.Video.UpdateVideoFields)
+			videos.POST("/:id/like", middleware.AuthMiddleware(cfg), h.Video.LikeVideo)
+			videos.DELETE("/:id/like", middleware.AuthMiddleware(cfg), h.Video.UnlikeVideo)
+			videos.POST("/:id/comment", middleware.AuthMiddleware(cfg), h.Video.AddComment)
 			videos.POST("/:id/moderate", middleware.AuthMiddleware(cfg), h.Video.ModerateVideo)
+			videos.POST("/:id/hide", middleware.AuthMiddleware(cfg), h.Video.HideVideo)
+			videos.POST("/:id/unhide", middleware.AuthMiddleware(cfg), h.Video.UnhideVideo)
+			videos.POST("/:id/publish/vk", middleware.AuthMiddleware(cfg), h.VK.PublishVideoToVK)
+			videos.POST("/:id/publish/telegram", middleware.AuthMiddleware(cfg), h.Telegram.PublishVideoToTelegram)
+			videos.POST("/:id/publish/max", middleware.AuthMiddleware(cfg), h.Max.PublishVideoToMax)
 		}
+
+		// Admin routes
+		admin := api.Group("/admin")
+		{
+			admin.GET("/analytics", middleware.AuthMiddleware(cfg), h.Admin.GetAnalytics)
+		}
+
+		// Публичная аналитика: логирование нажатия «Сгенерировать своё видео» (IP, кол-во переходов)
+		api.POST("/analytics/generate-video-click", middleware.ClientIPMiddleware(), middleware.OptionalAuthMiddleware(cfg), h.Admin.LogGenerateVideoClick)
+
+		// Settings — GET публичный, PATCH только админ
+		api.GET("/settings", h.Settings.GetPublic)
+		api.PATCH("/settings", middleware.AuthMiddleware(cfg), h.Settings.UpdateShowViewCount)
 
 		// Category routes
 		categories := api.Group("/categories")

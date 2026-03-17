@@ -34,7 +34,8 @@ type Video struct {
 	ThumbnailURL      string           `json:"thumbnail_url"`                                      // Превью для видео
 	Duration          int              `json:"duration"`                                            // in seconds (для видео)
 	Views             int              `json:"views" gorm:"default:0"`
-	ModerationStatus  ModerationStatus `json:"moderation_status" gorm:"type:varchar(20);default:'pending';index"` // Статус модерации
+	ModerationStatus  ModerationStatus `json:"moderation_status" gorm:"type:varchar(20);default:'pending';index"`
+	IsHidden          bool             `json:"is_hidden" gorm:"default:false;index"`
 	CreatedAt         time.Time        `json:"created_at"`
 	UpdatedAt         time.Time        `json:"updated_at"`
 	DeletedAt         gorm.DeletedAt   `json:"-" gorm:"index"`

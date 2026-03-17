@@ -6,11 +6,16 @@ import (
 )
 
 type VideoService interface {
-	GetFeed(limit, offset int, isAdmin bool) ([]models.Video, error)
+	GetFeed(limit, offset int, isAdmin bool, excludeIDs []uint, orderRandom bool) ([]models.Video, error)
 	GetVideo(id uint, isAdmin bool) (*models.Video, error)
 	GetByCategory(categoryID uint, limit, offset int, isAdmin bool) ([]models.Video, error)
 	GetByTag(tag string, limit, offset int, isAdmin bool) ([]models.Video, error)
 	GetPendingModeration(limit, offset int) ([]models.Video, error)
+	GetApproved(limit, offset int) ([]models.Video, error)
+	GetHidden(limit, offset int) ([]models.Video, error)
+	HideVideo(id uint) error
+	UnhideVideo(id uint) error
+	UpdateVideoFields(id uint, title, description, tags string) error
 	UploadVideo(userID uint, title, description, videoURL, thumbnailURL string, duration int) (*models.Video, error)
 	UploadMedia(userID uint, title, description, tags string, categoryID *uint, mediaURL string, mediaType models.MediaType, thumbnailURL string, duration int) (*models.Video, error)
 	ModerateVideo(videoID uint, status models.ModerationStatus) error
@@ -38,8 +43,8 @@ func NewVideoService(
 	}
 }
 
-func (s *videoService) GetFeed(limit, offset int, isAdmin bool) ([]models.Video, error) {
-	return s.videoRepo.GetFeed(limit, offset, isAdmin)
+func (s *videoService) GetFeed(limit, offset int, isAdmin bool, excludeIDs []uint, orderRandom bool) ([]models.Video, error) {
+	return s.videoRepo.GetFeed(limit, offset, isAdmin, excludeIDs, orderRandom)
 }
 
 func (s *videoService) GetByCategory(categoryID uint, limit, offset int, isAdmin bool) ([]models.Video, error) {
@@ -52,6 +57,26 @@ func (s *videoService) GetByTag(tag string, limit, offset int, isAdmin bool) ([]
 
 func (s *videoService) GetPendingModeration(limit, offset int) ([]models.Video, error) {
 	return s.videoRepo.GetPendingModeration(limit, offset)
+}
+
+func (s *videoService) GetApproved(limit, offset int) ([]models.Video, error) {
+	return s.videoRepo.GetApproved(limit, offset)
+}
+
+func (s *videoService) GetHidden(limit, offset int) ([]models.Video, error) {
+	return s.videoRepo.GetHidden(limit, offset)
+}
+
+func (s *videoService) HideVideo(id uint) error {
+	return s.videoRepo.SetHidden(id, true)
+}
+
+func (s *videoService) UnhideVideo(id uint) error {
+	return s.videoRepo.SetHidden(id, false)
+}
+
+func (s *videoService) UpdateVideoFields(id uint, title, description, tags string) error {
+	return s.videoRepo.UpdateFields(id, title, description, tags)
 }
 
 func (s *videoService) GetVideo(id uint, isAdmin bool) (*models.Video, error) {

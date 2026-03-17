@@ -6,6 +6,32 @@ import { videoApi, Video } from '@/lib/api/video'
 import VideoDetail from '@/components/VideoDetail'
 import Link from 'next/link'
 
+const VIDEO_NAV_STACK_KEY = 'videoNavStack'
+
+function getNavStack(): number[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = sessionStorage.getItem(VIDEO_NAV_STACK_KEY)
+    return raw ? JSON.parse(raw) : []
+  } catch {
+    return []
+  }
+}
+
+function pushNavStack(id: number) {
+  const stack = getNavStack()
+  stack.push(id)
+  sessionStorage.setItem(VIDEO_NAV_STACK_KEY, JSON.stringify(stack))
+}
+
+function popNavStack(): number | null {
+  const stack = getNavStack()
+  if (stack.length === 0) return null
+  const id = stack.pop()!
+  sessionStorage.setItem(VIDEO_NAV_STACK_KEY, JSON.stringify(stack))
+  return id
+}
+
 function VideoPageContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -16,6 +42,15 @@ function VideoPageContent() {
   const touchStartY = useRef<number | null>(null)
   const touchEndY = useRef<number | null>(null)
   const minSwipeDistance = 50
+
+  // Сбрасываем стек при заходе на видео не через Назад/Вперёд (например с ленты)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const nav = searchParams.get('nav')
+    if (nav !== 'next' && nav !== 'prev') {
+      sessionStorage.removeItem(VIDEO_NAV_STACK_KEY)
+    }
+  }, [searchParams])
 
   useEffect(() => {
     const fetchVideo = async () => {
@@ -34,10 +69,10 @@ function VideoPageContent() {
           return
         }
 
-        // Загружаем текущее видео и список видео для навигации
+        // Загружаем текущее видео и ленту для навигации (непросмотренные; при просмотре всего — сброс и случайный порядок)
         const [currentVideo, feedVideos] = await Promise.all([
           videoApi.getVideo(id),
-          videoApi.getFeed(50, 0) // Загружаем больше видео для навигации
+          videoApi.getFeed(10, 0),
         ])
         
         setVideo(currentVideo)
@@ -73,34 +108,40 @@ function VideoPageContent() {
     const currentIndex = videos.findIndex(v => v.id === video.id)
     
     if (distance > 0) {
-      // Свайп вверх - следующее видео (зацикливание)
+      pushNavStack(video.id)
       const nextIndex = currentIndex < videos.length - 1 ? currentIndex + 1 : 0
       const nextVideo = videos[nextIndex]
-      router.push(`/videos?id=${nextVideo.id}`)
+      router.push(`/videos?id=${nextVideo.id}&nav=next`)
     } else {
-      // Свайп вниз - предыдущее видео (зацикливание)
-      const prevIndex = currentIndex > 0 ? currentIndex - 1 : videos.length - 1
-      const prevVideo = videos[prevIndex]
-      router.push(`/videos?id=${prevVideo.id}`)
+      const backId = popNavStack()
+      if (backId != null) {
+        router.push(`/videos?id=${backId}&nav=prev`)
+      } else {
+        const prevIndex = currentIndex > 0 ? currentIndex - 1 : videos.length - 1
+        router.push(`/videos?id=${videos[prevIndex].id}`)
+      }
     }
   }
 
   const handleNext = () => {
     if (!video || videos.length === 0) return
+    pushNavStack(video.id)
     const currentIndex = videos.findIndex(v => v.id === video.id)
-    // Зацикливание: если последнее видео, переходим к первому
     const nextIndex = currentIndex < videos.length - 1 ? currentIndex + 1 : 0
     const nextVideo = videos[nextIndex]
-    router.push(`/videos?id=${nextVideo.id}`)
+    router.push(`/videos?id=${nextVideo.id}&nav=next`)
   }
 
   const handlePrev = () => {
     if (!video || videos.length === 0) return
+    const backId = popNavStack()
+    if (backId != null) {
+      router.push(`/videos?id=${backId}&nav=prev`)
+      return
+    }
     const currentIndex = videos.findIndex(v => v.id === video.id)
-    // Зацикливание: если первое видео, переходим к последнему
     const prevIndex = currentIndex > 0 ? currentIndex - 1 : videos.length - 1
-    const prevVideo = videos[prevIndex]
-    router.push(`/videos?id=${prevVideo.id}`)
+    router.push(`/videos?id=${videos[prevIndex].id}`)
   }
 
   if (loading) {
@@ -154,7 +195,7 @@ function VideoPageContent() {
           {hasVideos && (
             <button
               onClick={handlePrev}
-              className="absolute left-2 top-1/2 -translate-y-1/2 z-20 bg-white rounded-full p-2 shadow-lg hover:bg-gray-100 transition-colors"
+              className="absolute left-2 top-[38%] -translate-y-1/2 z-20 bg-white rounded-full p-2 shadow-lg hover:bg-gray-100 transition-colors"
               aria-label="Предыдущее видео"
             >
               <svg className="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -167,7 +208,7 @@ function VideoPageContent() {
           {hasVideos && (
             <button
               onClick={handleNext}
-              className="absolute right-2 top-1/2 -translate-y-1/2 z-20 bg-white rounded-full p-2 shadow-lg hover:bg-gray-100 transition-colors"
+              className="absolute right-2 top-[38%] -translate-y-1/2 z-20 bg-white rounded-full p-2 shadow-lg hover:bg-gray-100 transition-colors"
               aria-label="Следующее видео"
             >
               <svg className="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">

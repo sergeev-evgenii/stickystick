@@ -8,12 +8,16 @@ import (
 
 type VideoRepository interface {
 	Create(video *models.Video) error
-	GetByID(id uint, includePending bool) (*models.Video, error) // includePending - показывать ли видео на модерации
-	GetFeed(limit, offset int, includePending bool) ([]models.Video, error) // includePending - показывать ли видео на модерации
+	GetByID(id uint, includePending bool) (*models.Video, error)
+	GetFeed(limit, offset int, includePending bool, excludeIDs []uint, orderRandom bool) ([]models.Video, error)
 	GetByUserID(userID uint, limit, offset int) ([]models.Video, error)
 	GetByCategory(categoryID uint, limit, offset int, includePending bool) ([]models.Video, error)
 	GetByTag(tag string, limit, offset int, includePending bool) ([]models.Video, error)
-	GetPendingModeration(limit, offset int) ([]models.Video, error) // Получить видео на модерации
+	GetPendingModeration(limit, offset int) ([]models.Video, error)
+	GetApproved(limit, offset int) ([]models.Video, error)
+	GetHidden(limit, offset int) ([]models.Video, error)
+	SetHidden(id uint, hidden bool) error
+	UpdateFields(id uint, title, description, tags string) error
 	Update(video *models.Video) error
 	Delete(id uint) error
 	IncrementViews(id uint) error
@@ -46,16 +50,50 @@ func (r *videoRepository) GetByID(id uint, includePending bool) (*models.Video, 
 	return &video, nil
 }
 
-func (r *videoRepository) GetFeed(limit, offset int, includePending bool) ([]models.Video, error) {
+func (r *videoRepository) GetFeed(limit, offset int, includePending bool, excludeIDs []uint, orderRandom bool) ([]models.Video, error) {
 	var videos []models.Video
-	query := r.db.Preload("User").Preload("Category").Order("created_at DESC")
-	
-	if !includePending {
-		query = query.Where("moderation_status = ?", models.ModerationStatusApproved)
+	query := r.db.Preload("User").Preload("Category")
+	if orderRandom {
+		query = query.Order("RANDOM()")
+	} else {
+		query = query.Order("created_at DESC")
 	}
-	
+	if !includePending {
+		query = query.Where("moderation_status = ? AND is_hidden = false", models.ModerationStatusApproved)
+	}
+	if len(excludeIDs) > 0 {
+		query = query.Where("id NOT IN ?", excludeIDs)
+	}
 	err := query.Limit(limit).Offset(offset).Find(&videos).Error
 	return videos, err
+}
+
+func (r *videoRepository) GetApproved(limit, offset int) ([]models.Video, error) {
+	var videos []models.Video
+	err := r.db.Where("moderation_status = ? AND is_hidden = false", models.ModerationStatusApproved).
+		Preload("User").Preload("Category").
+		Order("created_at DESC").Limit(limit).Offset(offset).Find(&videos).Error
+	return videos, err
+}
+
+func (r *videoRepository) GetHidden(limit, offset int) ([]models.Video, error) {
+	var videos []models.Video
+	err := r.db.Where("is_hidden = true").
+		Preload("User").Preload("Category").
+		Order("created_at DESC").Limit(limit).Offset(offset).Find(&videos).Error
+	return videos, err
+}
+
+func (r *videoRepository) SetHidden(id uint, hidden bool) error {
+	return r.db.Model(&models.Video{}).Where("id = ?", id).Update("is_hidden", hidden).Error
+}
+
+func (r *videoRepository) UpdateFields(id uint, title, description, tags string) error {
+	return r.db.Model(&models.Video{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"title":       title,
+		"description": description,
+		"tags":        tags,
+	}).Error
 }
 
 func (r *videoRepository) GetPendingModeration(limit, offset int) ([]models.Video, error) {

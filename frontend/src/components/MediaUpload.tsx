@@ -190,6 +190,20 @@ export default function MediaUpload({ onSuccess, onError }: MediaUploadProps) {
           />
         </div>
 
+        {/* Теги */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Теги
+          </label>
+          <input
+            type="text"
+            value={tags}
+            onChange={(e) => setTags(e.target.value)}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="мем, смешно, прикол (через запятую)"
+          />
+        </div>
+
         {/* Превью для видео (опционально) */}
         {file && file.type.startsWith('video/') && (
           <div>

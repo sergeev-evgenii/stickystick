@@ -2,6 +2,17 @@
 @tailwind components;
 @tailwind utilities;
 
+@font-face {
+  font-family: 'Verveine Corp';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/VerveineCorp-Regular.otf') format('opentype'),
+       url('/fonts/VerveineCorp-Regular.woff2') format('woff2'),
+       url('/fonts/VerveineCorp-Regular.woff') format('woff'),
+       url('/fonts/VerveineCorp-Regular.ttf') format('truetype');
+}
+
 :root {
   --foreground-rgb: 0, 0, 0;
   --background-start-rgb: 214, 219, 220;

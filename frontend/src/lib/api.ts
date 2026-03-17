@@ -3,6 +3,7 @@ import axios from 'axios'
 const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || '',
   timeout: 300000, // 5 минут для больших файлов
+  withCredentials: true, // куки viewer_id для «уже просмотренных» видео
 })
 
 // Request interceptor для добавления токена

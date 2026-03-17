@@ -7,6 +7,7 @@ import (
 
 type UserService interface {
 	GetProfile(id uint) (*models.User, error)
+	GetByIDs(ids []uint) ([]*models.User, error)
 	UpdateProfile(id uint, username, bio, avatar string) (*models.User, error)
 }
 
@@ -22,6 +23,10 @@ func NewUserService(userRepo repository.UserRepository) UserService {
 
 func (s *userService) GetProfile(id uint) (*models.User, error) {
 	return s.userRepo.GetByID(id)
+}
+
+func (s *userService) GetByIDs(ids []uint) ([]*models.User, error) {
+	return s.userRepo.GetByIDs(ids)
 }
 
 func (s *userService) UpdateProfile(id uint, username, bio, avatar string) (*models.User, error) {

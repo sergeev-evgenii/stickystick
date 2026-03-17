@@ -9,6 +9,7 @@ import (
 type UserRepository interface {
 	Create(user *models.User) error
 	GetByID(id uint) (*models.User, error)
+	GetByIDs(ids []uint) ([]*models.User, error)
 	GetByEmail(email string) (*models.User, error)
 	GetByUsername(username string) (*models.User, error)
 	Update(user *models.User) error
@@ -51,6 +52,12 @@ func (r *userRepository) GetByUsername(username string) (*models.User, error) {
 		return nil, err
 	}
 	return &user, nil
+}
+
+func (r *userRepository) GetByIDs(ids []uint) ([]*models.User, error) {
+	var users []*models.User
+	err := r.db.Where("id IN ?", ids).Find(&users).Error
+	return users, err
 }
 
 func (r *userRepository) Update(user *models.User) error {

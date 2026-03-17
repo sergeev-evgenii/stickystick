@@ -114,6 +114,21 @@ func RunMigrations(db *gorm.DB) error {
 				log.Println("Successfully added is_admin column to users")
 			}
 		}
+
+		// Нормализация media_url и thumbnail_url к относительному формату (videos/xxx.mp4)
+		log.Println("Migrating: Normalizing media_url to relative paths...")
+		db.Exec(`UPDATE videos SET media_url = substring(media_url from 10) WHERE media_url LIKE '/uploads/%'`)
+		db.Exec(`
+			UPDATE videos SET media_url = substring(
+				regexp_replace(media_url, '^https?://[^/]+', '') from 10
+			) WHERE media_url LIKE 'http%' AND media_url LIKE '%/uploads/%'
+		`)
+		db.Exec(`UPDATE videos SET thumbnail_url = substring(thumbnail_url from 10) WHERE thumbnail_url LIKE '/uploads/%'`)
+		db.Exec(`
+			UPDATE videos SET thumbnail_url = substring(
+				regexp_replace(thumbnail_url, '^https?://[^/]+', '') from 10
+			) WHERE thumbnail_url LIKE 'http%' AND thumbnail_url LIKE '%/uploads/%'
+		`)
 	}
 
 	// Запускаем AutoMigrate для всех моделей
@@ -124,9 +139,35 @@ func RunMigrations(db *gorm.DB) error {
 		&models.Video{},
 		&models.Comment{},
 		&models.Like{},
+		&models.ActivityLog{},
+		&models.SiteSettings{},
 	); err != nil {
 		return err
 	}
+
+	// Создаём запись настроек по умолчанию, если её нет
+	var count int64
+	if err := db.Model(&models.SiteSettings{}).Count(&count).Error; err == nil && count == 0 {
+		if err := db.Create(&models.SiteSettings{
+			ID:                    1,
+			ShowViewCount:         true,
+			DefaultPublishVK:       "мы в вк ссылка в вк\nhttps://stickystick.ru",
+			DefaultPublishTelegram: "мы в телеграмм ссылка -а телегу\nhttps://stickystick.ru",
+			DefaultPublishMax:      "мы в макс ссылка на макс\nhttps://stickystick.ru",
+		}).Error; err != nil {
+			log.Printf("Warning: Failed to create default site_settings: %v", err)
+		} else {
+			log.Println("Created default site_settings (show_view_count=true)")
+		}
+	}
+
+	// Если запись уже есть (обновление), проставляем дефолты для новых полей, если они пустые
+	db.Exec(`UPDATE site_settings SET default_publish_vk = 'мы в вк ссылка в вк
+https://stickystick.ru' WHERE (default_publish_vk IS NULL OR default_publish_vk = '') AND id = 1`)
+	db.Exec(`UPDATE site_settings SET default_publish_telegram = 'мы в телеграмм ссылка -а телегу
+https://stickystick.ru' WHERE (default_publish_telegram IS NULL OR default_publish_telegram = '') AND id = 1`)
+	db.Exec(`UPDATE site_settings SET default_publish_max = 'мы в макс ссылка на макс
+https://stickystick.ru' WHERE (default_publish_max IS NULL OR default_publish_max = '') AND id = 1`)
 
 	// Создаем категорию "юмор", если её нет
 	var humorCategory models.Category

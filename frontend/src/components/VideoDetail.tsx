@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { Video, videoApi } from '@/lib/api/video'
+import { getMediaSrc } from '@/lib/utils/mediaUrl'
 import { useAuthStore } from '@/store/authStore'
+import { useSettingsStore } from '@/store/settingsStore'
 import { formatDistanceToNow } from 'date-fns'
 
 interface VideoDetailProps {
@@ -18,14 +20,106 @@ export default function VideoDetail({ video, onUpdate }: VideoDetailProps) {
   const [loading, setLoading] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
 
+  // Админ-редактирование
+  const [editMode, setEditMode] = useState(false)
+  const [editTitle, setEditTitle] = useState(video.title)
+  const [editDescription, setEditDescription] = useState(video.description || '')
+  const [editTags, setEditTags] = useState(video.tags || '')
+  const [adminLoading, setAdminLoading] = useState(false)
+
+  const isAdmin = user?.is_admin === true
+  const showViewCount = useSettingsStore((s) => s.showViewCount)
+
   useEffect(() => {
-    // Проверяем, лайкнул ли текущий пользователь видео
     if (isAuthenticated && user && video.likes) {
       const liked = video.likes.some((like: any) => like.user_id === user.id)
       setIsLiked(liked)
     }
     setLikesCount(video.likes?.length || 0)
   }, [video, isAuthenticated, user])
+
+  const handleHide = async () => {
+    if (!confirm('Убрать видео из раздачи?')) return
+    setAdminLoading(true)
+    try {
+      await videoApi.hideVideo(video.id)
+      onUpdate?.({ ...video, is_hidden: true })
+      alert('Видео убрано из раздачи')
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Ошибка')
+    } finally {
+      setAdminLoading(false)
+    }
+  }
+
+  const handleUnhide = async () => {
+    setAdminLoading(true)
+    try {
+      await videoApi.unhideVideo(video.id)
+      onUpdate?.({ ...video, is_hidden: false })
+      alert('Видео возвращено в раздачу')
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Ошибка')
+    } finally {
+      setAdminLoading(false)
+    }
+  }
+
+  const handlePublishVK = async () => {
+    if (!confirm('Опубликовать это видео в группу ВКонтакте?')) return
+    setAdminLoading(true)
+    try {
+      const res = await videoApi.publishToVK(video.id)
+      alert(`Опубликовано в ВК! ID поста: ${res.post_id}`)
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Ошибка публикации в ВК')
+    } finally {
+      setAdminLoading(false)
+    }
+  }
+
+  const handlePublishTelegram = async () => {
+    if (!confirm('Опубликовать это видео в канал Telegram?')) return
+    setAdminLoading(true)
+    try {
+      const res = await videoApi.publishToTelegram(video.id)
+      alert(`Опубликовано в Telegram! ID сообщения: ${res.message_id}`)
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Ошибка публикации в Telegram')
+    } finally {
+      setAdminLoading(false)
+    }
+  }
+
+  const handlePublishMax = async () => {
+    if (!confirm('Опубликовать это видео в мессенджер Max?')) return
+    setAdminLoading(true)
+    try {
+      const res = await videoApi.publishToMax(video.id)
+      alert(`Опубликовано в Max!`)
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Ошибка публикации в Max')
+    } finally {
+      setAdminLoading(false)
+    }
+  }
+
+  const handleSaveEdit = async () => {
+    setAdminLoading(true)
+    try {
+      await videoApi.updateVideoFields(video.id, {
+        title: editTitle,
+        description: editDescription,
+        tags: editTags,
+      })
+      onUpdate?.({ ...video, title: editTitle, description: editDescription, tags: editTags })
+      setEditMode(false)
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Ошибка сохранения')
+    } finally {
+      setAdminLoading(false)
+    }
+  }
 
   const handleLike = async () => {
     if (!isAuthenticated) {
@@ -64,8 +158,8 @@ export default function VideoDetail({ video, onUpdate }: VideoDetailProps) {
         return (
           <video
             ref={videoRef}
-            src={video.media_url}
-            poster={video.thumbnail_url}
+            src={getMediaSrc(video.media_url)}
+            poster={getMediaSrc(video.thumbnail_url)}
             controls
             className="w-full h-full object-contain rounded-lg"
             autoPlay
@@ -74,7 +168,7 @@ export default function VideoDetail({ video, onUpdate }: VideoDetailProps) {
       case 'gif':
         return (
           <img
-            src={video.media_url}
+            src={getMediaSrc(video.media_url)}
             alt={video.title}
             className="w-full h-full object-contain rounded-lg"
           />
@@ -82,7 +176,7 @@ export default function VideoDetail({ video, onUpdate }: VideoDetailProps) {
       case 'photo':
         return (
           <img
-            src={video.media_url}
+            src={getMediaSrc(video.media_url)}
             alt={video.title}
             className="w-full h-full object-contain rounded-lg"
           />
@@ -131,8 +225,12 @@ export default function VideoDetail({ video, onUpdate }: VideoDetailProps) {
             <div className="flex items-center gap-4 text-sm text-gray-500">
               <span>@{video.user.username}</span>
               <span>•</span>
-              <span>{video.views} просмотров</span>
-              <span>•</span>
+              {showViewCount && (
+                <>
+                  <span>{video.views} просмотров</span>
+                  <span>•</span>
+                </>
+              )}
               <span>
               {formatDistanceToNow(new Date(video.created_at), {
                 addSuffix: true,
@@ -191,6 +289,110 @@ export default function VideoDetail({ video, onUpdate }: VideoDetailProps) {
             </button>
           )}
         </div>
+
+        {/* Админ-панель */}
+        {isAdmin && (
+          <div className="border border-orange-200 rounded-lg p-4 bg-orange-50">
+            <p className="text-xs font-semibold text-orange-600 uppercase mb-3">Управление (админ)</p>
+
+            {editMode ? (
+              <div className="flex flex-col gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Заголовок</label>
+                  <input
+                    type="text"
+                    value={editTitle}
+                    onChange={e => setEditTitle(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Описание</label>
+                  <textarea
+                    value={editDescription}
+                    onChange={e => setEditDescription(e.target.value)}
+                    rows={2}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Теги <span className="text-gray-400 font-normal">(через запятую)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={editTags}
+                    onChange={e => setEditTags(e.target.value)}
+                    placeholder="юмор, смешное, приколы"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleSaveEdit}
+                    disabled={adminLoading}
+                    className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {adminLoading ? 'Сохраняю...' : 'Сохранить'}
+                  </button>
+                  <button
+                    onClick={() => setEditMode(false)}
+                    className="flex-1 bg-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-gray-300"
+                  >
+                    Отмена
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => setEditMode(true)}
+                  className="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-gray-50 transition-colors"
+                >
+                  ✏️ Редактировать
+                </button>
+                {video.is_hidden ? (
+                  <button
+                    onClick={handleUnhide}
+                    disabled={adminLoading}
+                    className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-green-700 disabled:opacity-50 transition-colors"
+                  >
+                    {adminLoading ? '...' : '✓ Вернуть в раздачу'}
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleHide}
+                    disabled={adminLoading}
+                    className="bg-orange-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-orange-600 disabled:opacity-50 transition-colors"
+                  >
+                    {adminLoading ? '...' : '🚫 Убрать из раздачи'}
+                  </button>
+                )}
+                <button
+                  onClick={handlePublishVK}
+                  disabled={adminLoading}
+                  className="bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-600 disabled:opacity-50 transition-colors"
+                >
+                  {adminLoading ? '...' : '📤 ВК'}
+                </button>
+                <button
+                  onClick={handlePublishTelegram}
+                  disabled={adminLoading}
+                  className="bg-sky-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-sky-600 disabled:opacity-50 transition-colors"
+                >
+                  {adminLoading ? '...' : '📤 Telegram'}
+                </button>
+                <button
+                  onClick={handlePublishMax}
+                  disabled={adminLoading}
+                  className="bg-violet-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-violet-600 disabled:opacity-50 transition-colors"
+                >
+                  {adminLoading ? '...' : '📤 Max'}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
       </div>
     </div>

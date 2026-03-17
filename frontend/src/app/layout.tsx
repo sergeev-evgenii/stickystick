@@ -1,9 +1,7 @@
 'use client'
 
-import { Inter } from 'next/font/google'
 import './globals.css'
-
-const inter = Inter({ subsets: ['latin'] })
+import SettingsLoader from '@/components/SettingsLoader'
 
 export default function RootLayout({
   children,
@@ -15,8 +13,12 @@ export default function RootLayout({
       <head>
         <title>Sticky Stick</title>
         <meta name="description" content="Сервис для коротких видео" />
+        <link rel="icon" href="/favicon.jpg" type="image/jpeg" />
       </head>
-      <body className={inter.className}>{children}</body>
+      <body className="font-sans antialiased">
+        <SettingsLoader />
+        {children}
+      </body>
     </html>
   )
 }

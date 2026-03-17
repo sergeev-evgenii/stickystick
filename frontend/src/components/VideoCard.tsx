@@ -1,8 +1,11 @@
 'use client'
 
 import { Video } from '@/lib/api/video'
+import { getMediaSrc } from '@/lib/utils/mediaUrl'
 import { formatDistanceToNow } from 'date-fns'
 import Link from 'next/link'
+import { useAuthStore } from '@/store/authStore'
+import { useSettingsStore } from '@/store/settingsStore'
 
 interface VideoCardProps {
   video: Video
@@ -10,11 +13,14 @@ interface VideoCardProps {
 }
 
 export default function VideoCard({ video, onClick }: VideoCardProps) {
+  const { user } = useAuthStore()
+  const isAdmin = user?.is_admin === true
+  const showViewCount = useSettingsStore((s) => s.showViewCount)
   const renderThumbnail = () => {
     if (video.thumbnail_url && video.media_type === 'video') {
       return (
         <img
-          src={video.thumbnail_url}
+          src={getMediaSrc(video.thumbnail_url)}
           alt={video.title}
           className="w-full h-48 object-cover"
         />
@@ -23,22 +29,21 @@ export default function VideoCard({ video, onClick }: VideoCardProps) {
 
     switch (video.media_type) {
       case 'video':
+        // Если нет thumbnail — показываем первый кадр видео
         return (
-          <div className="w-full h-48 bg-gray-800 flex items-center justify-center">
-            <svg
-              className="w-16 h-16 text-white"
-              fill="currentColor"
-              viewBox="0 0 20 20"
-            >
-              <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
-            </svg>
-          </div>
+          <video
+            src={getMediaSrc(video.media_url)}
+            muted
+            playsInline
+            preload="metadata"
+            className="w-full h-48 object-cover"
+          />
         )
       case 'gif':
       case 'photo':
         return (
           <img
-            src={video.media_url}
+            src={getMediaSrc(video.media_url)}
             alt={video.title}
             className="w-full h-48 object-cover"
           />
@@ -99,7 +104,7 @@ export default function VideoCard({ video, onClick }: VideoCardProps) {
             @{video.user.username}
           </Link>
           <div className="flex items-center gap-4">
-            <span>{video.views} просмотров</span>
+            {showViewCount && <span>{video.views} просмотров</span>}
             <span>
               {formatDistanceToNow(new Date(video.created_at), {
                 addSuffix: true,
@@ -117,6 +122,16 @@ export default function VideoCard({ video, onClick }: VideoCardProps) {
               />
             </svg>
             <span>{video.likes.length}</span>
+          </div>
+        )}
+        {isAdmin && (
+          <div className="mt-3 pt-3 border-t border-gray-100" onClick={(e) => e.stopPropagation()}>
+            <Link
+              href={`/videos/${video.id}/`}
+              className="inline-block w-full text-center py-2 px-3 rounded-lg bg-orange-100 text-orange-700 text-sm font-semibold hover:bg-orange-200 transition-colors"
+            >
+              Управление
+            </Link>
           </div>
         )}
       </div>

@@ -3,65 +3,8 @@
   hosts: all
   become: yes
   vars:
-
-    # Docker Registry настройки
-    docker_registry_url: "ghcr.io"  # Например: "registry.example.com" или "docker.io"
-    docker_registry_username: !vault |
-              $ANSIBLE_VAULT;1.1;AES256
-              34626136333661376361313464346439653038373961613262333532313437373737363236303664
-              6230353333316562393133333034623266616262393535340a303830646238653635383937373562
-              38623434346335663734646630326265336163643663663130353665616364643139353762353836
-              6665623561626565660a343731353937336537666632383164383033366464393664333033353363
-              3630
-    docker_registry_token: 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
-
-    # Имена образов (полные имена с registry если нужно)
-    frontend_image_name: "{{ docker_registry_url }}/sergeev-evgenii/stickystick/frontend"
-    backend_image_name: "{{ docker_registry_url }}/sergeev-evgenii/stickystick/backend"
-
-    # Имена контейнеров
-    frontend_container_name: "stickystick_frontend"
-    backend_container_name: "stickystick_backend"
-    postgres_container_name: "stickystick_postgres"
-
-    # PostgreSQL настройки
-    postgres_image: "postgres:17"
-    postgres_db_name: "stickystick"
-    postgres_superuser: "postgres"
-    postgres_superuser_password: "postgres"
-    postgres_user: "stickystick"
-    postgres_password: "stickystick"
-    postgres_port: "5433"
-    postgres_data_volume: "stickystick_pg_data"
-
-    # Доменное имя для nginx
-    nginx_domain: "stickystick.ru"
-    nginx_config_path: "/etc/nginx/conf.d/{{ nginx_domain }}.conf"
-
-    # Путь к проекту на сервере
-    project_path: "/opt/stickystick_service"
-
-    # Путь к .env файлу для backend (внутри монтируемой директории)
-    backend_env_file: "{{ project_path }}/backend/app/.env"
-
-    # HTTP Basic Auth для защищенных локаций
-    nginx_auth_username: !vault |
-              $ANSIBLE_VAULT;1.1;AES256
-              33393934396133383437663834613130616339616438616138623938666536326461346536393263
-              6662663636353334643765353063633131366430353131620a353436366136613861376339666561
-              34643465323031613737323638626532323561376265333038643430376538343564323735373738
-              3764643464323936320a313364363037646665383962363732393837623133613431363464616537
-              3464
-
-    nginx_auth_password: !vault |
-              $ANSIBLE_VAULT;1.1;AES256
-              31313063393235613464616166306236373561316564356436646531666530613032306561323730
-              3339623738666666636664346630356637623565343539610a643139303635643064353036626138
-              64613265366231613639376365363762633735643266623634323534383063373061303534386233
-              3861326334306335340a373964623235643332626564373739313339386336393761353131386464
-              3832
-
-    nginx_htpasswd_path: "/etc/nginx/.htpasswd"
+  vars_files:
+    - vault.yml   # подключаем зашифрованные переменные
 
   tasks:
     - name: Install Docker prerequisites
@@ -269,17 +212,9 @@
         source: pull
         force_source: yes
 
-    - name: Copy single file
-      copy:
-        src: configs/backend/env
-        dest: "{{ project_path }}/backend_env"
-        owner: root
-        group: root
-        mode: '0644'
-
-    - name: Copy single file
-      copy:
-        src: configs/backend/env
+    - name: Deploy backend env from template
+      template:
+        src: configs/backend/env.j2
         dest: "{{ project_path }}/backend_env"
         owner: root
         group: root

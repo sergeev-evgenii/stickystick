@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"sticky-stick/backend/internal/models"
 	"sticky-stick/backend/internal/service"
+	"sticky-stick/backend/internal/store"
 
 	"github.com/gin-gonic/gin"
 )
@@ -14,13 +15,15 @@ type VideoHandler struct {
 	videoService service.VideoService
 	mediaService service.MediaService
 	userService  service.UserService
+	seenStore    *store.SeenStore
 }
 
-func NewVideoHandler(videoService service.VideoService, mediaService service.MediaService, userService service.UserService) *VideoHandler {
+func NewVideoHandler(videoService service.VideoService, mediaService service.MediaService, userService service.UserService, seenStore *store.SeenStore) *VideoHandler {
 	return &VideoHandler{
 		videoService: videoService,
 		mediaService: mediaService,
 		userService:  userService,
+		seenStore:    seenStore,
 	}
 }
 
@@ -53,11 +56,28 @@ func (h *VideoHandler) GetFeed(c *gin.Context) {
 		}
 	}
 
+	viewerKey := getViewerKey(c)
+	seen := h.seenStore.GetSeen(viewerKey)
+	excludeIDs := make([]uint, 0, len(seen))
+	for id := range seen {
+		excludeIDs = append(excludeIDs, id)
+	}
+
 	isAdmin := h.isAdmin(c)
-	videos, err := h.videoService.GetFeed(limit, offset, isAdmin)
+	videos, err := h.videoService.GetFeed(limit, offset, isAdmin, excludeIDs, false)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+
+	// Пользователь просмотрел всё — очищаем список и отдаём ленту в случайном порядке
+	if len(videos) == 0 && len(excludeIDs) > 0 {
+		h.seenStore.ClearSeen(viewerKey)
+		videos, err = h.videoService.GetFeed(limit, offset, isAdmin, nil, true)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 	}
 
 	c.JSON(http.StatusOK, videos)
@@ -76,6 +96,9 @@ func (h *VideoHandler) GetVideo(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "video not found"})
 		return
 	}
+
+	viewerKey := getViewerKey(c)
+	h.seenStore.MarkSeen(viewerKey, []uint{video.ID})
 
 	c.JSON(http.StatusOK, video)
 }
@@ -168,24 +191,21 @@ func (h *VideoHandler) UploadMedia(c *gin.Context) {
 		return
 	}
 
-	// Сохраняем файл
-	relativePath, err := h.mediaService.SaveFile(file, mediaType)
+	// Сохраняем файл (SaveFile возвращает относительный путь videos/xxx.mp4 для БД)
+	mediaURL, err := h.mediaService.SaveFile(file, mediaType)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to save file: %v", err)})
 		return
 	}
-
-	// Получаем URL для сохраненного файла
-	mediaURL := h.mediaService.GetFileURL(relativePath)
 
 	// Если это видео, можно загрузить thumbnail отдельно
 	var thumbnailURL string
 	if mediaType == "video" {
 		thumbnailFile, err := c.FormFile("thumbnail")
 		if err == nil {
-			thumbnailPath, err := h.mediaService.SaveFile(thumbnailFile, "photo")
-			if err == nil {
-				thumbnailURL = h.mediaService.GetFileURL(thumbnailPath)
+			thumbnailURL, err = h.mediaService.SaveFile(thumbnailFile, "photo")
+			if err != nil {
+				thumbnailURL = ""
 			}
 		}
 	}
@@ -212,7 +232,7 @@ func (h *VideoHandler) UploadMedia(c *gin.Context) {
 	)
 	if err != nil {
 		// Если не удалось создать запись, удаляем загруженный файл
-		_ = h.mediaService.DeleteFile(relativePath)
+		_ = h.mediaService.DeleteFile(mediaURL)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -391,4 +411,112 @@ func (h *VideoHandler) ModerateVideo(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "video moderated successfully", "status": status})
+}
+
+func (h *VideoHandler) GetApproved(c *gin.Context) {
+	if !h.isAdmin(c) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "admin access required"})
+		return
+	}
+	limit, offset := 50, 0
+	if l := c.Query("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil {
+			limit = parsed
+		}
+	}
+	if o := c.Query("offset"); o != "" {
+		if parsed, err := strconv.Atoi(o); err == nil {
+			offset = parsed
+		}
+	}
+	videos, err := h.videoService.GetApproved(limit, offset)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, videos)
+}
+
+func (h *VideoHandler) GetHidden(c *gin.Context) {
+	if !h.isAdmin(c) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "admin access required"})
+		return
+	}
+	limit, offset := 50, 0
+	if l := c.Query("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil {
+			limit = parsed
+		}
+	}
+	if o := c.Query("offset"); o != "" {
+		if parsed, err := strconv.Atoi(o); err == nil {
+			offset = parsed
+		}
+	}
+	videos, err := h.videoService.GetHidden(limit, offset)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, videos)
+}
+
+func (h *VideoHandler) HideVideo(c *gin.Context) {
+	if !h.isAdmin(c) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "admin access required"})
+		return
+	}
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid video id"})
+		return
+	}
+	if err := h.videoService.HideVideo(uint(id)); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "hidden"})
+}
+
+func (h *VideoHandler) UnhideVideo(c *gin.Context) {
+	if !h.isAdmin(c) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "admin access required"})
+		return
+	}
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid video id"})
+		return
+	}
+	if err := h.videoService.UnhideVideo(uint(id)); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "visible"})
+}
+
+func (h *VideoHandler) UpdateVideoFields(c *gin.Context) {
+	if !h.isAdmin(c) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "admin access required"})
+		return
+	}
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid video id"})
+		return
+	}
+	var req struct {
+		Title       string `json:"title"`
+		Description string `json:"description"`
+		Tags        string `json:"tags"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := h.videoService.UpdateVideoFields(uint(id), req.Title, req.Description, req.Tags); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "updated"})
 }

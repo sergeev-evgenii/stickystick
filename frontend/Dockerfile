@@ -3,6 +3,8 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+ENV NEXT_PUBLIC_TELEGRAM_URL=https://t.me/uncensored_mems
+ENV NEXT_PUBLIC_VK_URL=https://vk.com/club236352692
 # Копируем package файлы и устанавливаем зависимости
 COPY package.json package-lock.json* ./
 RUN npm ci

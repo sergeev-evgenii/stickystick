@@ -1,19 +1,22 @@
 'use client'
 
 import { Video } from '@/lib/api/video'
+import { getMediaSrc } from '@/lib/utils/mediaUrl'
+import { useSettingsStore } from '@/store/settingsStore'
 
 interface VideoPlayerProps {
   video: Video
 }
 
 export default function VideoPlayer({ video }: VideoPlayerProps) {
+  const showViewCount = useSettingsStore((s) => s.showViewCount)
   const renderMedia = () => {
     switch (video.media_type) {
       case 'video':
         return (
           <video
-            src={video.media_url}
-            poster={video.thumbnail_url}
+            src={getMediaSrc(video.media_url)}
+            poster={getMediaSrc(video.thumbnail_url)}
             controls
             className="w-full h-full object-contain"
           />
@@ -21,7 +24,7 @@ export default function VideoPlayer({ video }: VideoPlayerProps) {
       case 'gif':
         return (
           <img
-            src={video.media_url}
+            src={getMediaSrc(video.media_url)}
             alt={video.title}
             className="w-full h-full object-contain"
           />
@@ -29,7 +32,7 @@ export default function VideoPlayer({ video }: VideoPlayerProps) {
       case 'photo':
         return (
           <img
-            src={video.media_url}
+            src={getMediaSrc(video.media_url)}
             alt={video.title}
             className="w-full h-full object-contain"
           />
@@ -51,7 +54,7 @@ export default function VideoPlayer({ video }: VideoPlayerProps) {
         )}
         <div className="flex items-center justify-between text-sm">
           <span>@{video.user.username}</span>
-          <span>{video.views} просмотров</span>
+          {showViewCount && <span>{video.views} просмотров</span>}
         </div>
       </div>
     </div>

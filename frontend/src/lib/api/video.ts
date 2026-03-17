@@ -15,6 +15,7 @@ export interface Video {
   duration: number
   views: number
   moderation_status?: 'pending' | 'approved' | 'rejected'
+  is_hidden?: boolean
   created_at: string
   user: {
     id: number
@@ -139,5 +140,42 @@ export const videoApi = {
 
   moderateVideo: async (id: number, status: 'approved' | 'rejected'): Promise<void> => {
     await api.post(`/api/v1/videos/${id}/moderate`, { status })
+  },
+
+  getApproved: async (limit = 50, offset = 0): Promise<Video[]> => {
+    const response = await api.get('/api/v1/videos/moderation/approved', { params: { limit, offset } })
+    return response.data
+  },
+
+  getHidden: async (limit = 50, offset = 0): Promise<Video[]> => {
+    const response = await api.get('/api/v1/videos/moderation/hidden', { params: { limit, offset } })
+    return response.data
+  },
+
+  hideVideo: async (id: number): Promise<void> => {
+    await api.post(`/api/v1/videos/${id}/hide`)
+  },
+
+  unhideVideo: async (id: number): Promise<void> => {
+    await api.post(`/api/v1/videos/${id}/unhide`)
+  },
+
+  updateVideoFields: async (id: number, data: { title: string; description: string; tags: string }): Promise<void> => {
+    await api.put(`/api/v1/videos/${id}`, data)
+  },
+
+  publishToVK: async (id: number, comment?: string): Promise<{ post_id: number; message: string }> => {
+    const response = await api.post(`/api/v1/videos/${id}/publish/vk`, { comment: comment ?? '' })
+    return response.data
+  },
+
+  publishToTelegram: async (id: number, comment?: string): Promise<{ message_id: number; message: string }> => {
+    const response = await api.post(`/api/v1/videos/${id}/publish/telegram`, { comment: comment ?? '' })
+    return response.data
+  },
+
+  publishToMax: async (id: number, comment?: string): Promise<{ message_id: string; message: string }> => {
+    const response = await api.post(`/api/v1/videos/${id}/publish/max`, { comment: comment ?? '' })
+    return response.data
   },
 }
