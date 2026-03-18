@@ -44,7 +44,7 @@ export default function VideoPlayer({ video }: VideoPlayerProps) {
 
   return (
     <div className="relative w-full bg-black rounded-lg overflow-hidden">
-      <div className="relative w-full aspect-video bg-black">
+      <div className="relative w-full bg-black h-[90vh] md:h-auto md:aspect-video">
         {renderMedia()}
       </div>
       <div className="p-4 text-white">

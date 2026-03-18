@@ -151,8 +151,10 @@ func RunMigrations(db *gorm.DB) error {
 		if err := db.Create(&models.SiteSettings{
 			ID:                    1,
 			ShowViewCount:         true,
-			DefaultPublishVK:       "мы в вк ссылка в вк\nhttps://stickystick.ru",
-			DefaultPublishTelegram: "мы в телеграмм ссылка -а телегу\nhttps://stickystick.ru",
+			// VK-посты: ссылка на Telegram + ссылка на проект
+			DefaultPublishVK:       "мы в телеграмм\nhttps://t.me/uncensored_mems\nhttps://stickystick.ru",
+			// Telegram-посты: ссылка на VK + ссылка на проект
+			DefaultPublishTelegram: "мы в вк\nhttps://vk.com/club236352692\nhttps://stickystick.ru",
 			DefaultPublishMax:      "мы в макс ссылка на макс\nhttps://stickystick.ru",
 		}).Error; err != nil {
 			log.Printf("Warning: Failed to create default site_settings: %v", err)
@@ -162,9 +164,11 @@ func RunMigrations(db *gorm.DB) error {
 	}
 
 	// Если запись уже есть (обновление), проставляем дефолты для новых полей, если они пустые
-	db.Exec(`UPDATE site_settings SET default_publish_vk = 'мы в вк ссылка в вк
+	db.Exec(`UPDATE site_settings SET default_publish_vk = 'мы в телеграмм
+https://t.me/uncensored_mems
 https://stickystick.ru' WHERE (default_publish_vk IS NULL OR default_publish_vk = '') AND id = 1`)
-	db.Exec(`UPDATE site_settings SET default_publish_telegram = 'мы в телеграмм ссылка -а телегу
+	db.Exec(`UPDATE site_settings SET default_publish_telegram = 'мы в вк
+https://vk.com/club236352692
 https://stickystick.ru' WHERE (default_publish_telegram IS NULL OR default_publish_telegram = '') AND id = 1`)
 	db.Exec(`UPDATE site_settings SET default_publish_max = 'мы в макс ссылка на макс
 https://stickystick.ru' WHERE (default_publish_max IS NULL OR default_publish_max = '') AND id = 1`)

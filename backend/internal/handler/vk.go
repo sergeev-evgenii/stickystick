@@ -73,16 +73,30 @@ func (h *VKHandler) PublishVideoToVK(c *gin.Context) {
 	// Формируем описание: описание видео + доп. комментарий
 	description := video.Description
 	comment := body.Comment
-	if strings.TrimSpace(comment) == "" && h.settings != nil {
-		if s, err := h.settings.GetPublic(); err == nil {
-			comment = s.DefaultPublishVK
-		}
-	}
 	if strings.TrimSpace(comment) != "" {
 		if description != "" {
 			description = description + "\n\n" + comment
 		} else {
 			description = comment
+		}
+	}
+	// Для ВК: сначала заголовок поста (title), потом описание, потом ссылки (телега + проект).
+	description = strings.TrimRight(description, "\n")
+	footer := "мы в телеграм — " + telegramChannelURL + "\n" + "проект — " + projectURL
+	if !strings.Contains(description, telegramChannelURL) && !strings.Contains(description, projectURL) {
+		if strings.TrimSpace(description) != "" {
+			description = description + "\n\n" + footer
+		} else {
+			description = footer
+		}
+	} else {
+		// если какие-то ссылки уже есть — просто гарантируем, что обе присутствуют, без дублей
+		description = ensureLinksFirst(description, []string{})
+		if !strings.Contains(description, telegramChannelURL) {
+			description = strings.TrimRight(description, "\n") + "\n" + "мы в телеграм — " + telegramChannelURL
+		}
+		if !strings.Contains(description, projectURL) {
+			description = strings.TrimRight(description, "\n") + "\n" + "проект — " + projectURL
 		}
 	}
 

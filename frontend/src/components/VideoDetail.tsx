@@ -191,14 +191,14 @@ export default function VideoDetail({ video, onUpdate }: VideoDetailProps) {
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-lg overflow-hidden select-none">
+    <div className="bg-white rounded-lg shadow-lg overflow-hidden select-none flex flex-col h-full md:block md:h-auto">
       {/* Медиа */}
-      <div className="relative bg-black w-full aspect-video flex items-center justify-center touch-none">
+      <div className="relative bg-black w-full flex items-center justify-center touch-none h-[90vh] md:h-auto md:aspect-video">
         {renderMedia()}
       </div>
 
       {/* Информация о видео */}
-      <div className="p-6">
+      <div className="p-4 md:p-6 overflow-y-auto md:overflow-visible">
         <div className="flex items-start justify-between mb-4">
           <div className="flex-1">
             {video.category && (
@@ -206,7 +206,7 @@ export default function VideoDetail({ video, onUpdate }: VideoDetailProps) {
                 {video.category.name}
               </span>
             )}
-            <h1 className="text-2xl font-bold mb-2">{video.title}</h1>
+            <h1 className="text-xl md:text-2xl font-bold mb-2">{video.title}</h1>
             {video.description && (
               <p className="text-gray-600 mb-4">{video.description}</p>
             )}

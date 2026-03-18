@@ -80,6 +80,8 @@ func (h *MaxHandler) PublishVideoToMax(c *gin.Context) {
 			description = comment
 		}
 	}
+	// Всегда добавляем ссылку на проект (без дублей).
+	description = ensureLinksFirst(description, []string{projectURL})
 
 	localPath, mediaType, err := h.resolveLocalPath(video.MediaURL, string(video.MediaType))
 	if err != nil {

@@ -68,17 +68,21 @@ func (h *TelegramHandler) PublishVideoToTelegram(c *gin.Context) {
 
 	description := video.Description
 	comment := body.Comment
-	if strings.TrimSpace(comment) == "" && h.settings != nil {
-		if s, err := h.settings.GetPublic(); err == nil {
-			comment = s.DefaultPublishTelegram
-		}
-	}
 	if strings.TrimSpace(comment) != "" {
 		if description != "" {
 			description = description + "\n\n" + comment
 		} else {
 			description = comment
 		}
+	}
+	// Для Telegram: медиа идёт "сначала" (sendVideo/sendPhoto), а подпись под ним:
+	// описание -> "мы в вк — <url>" -> "проект — <url>".
+	description = strings.TrimRight(description, "\n")
+	footer := "мы в вк — " + vkGroupURL + "\n" + "проект — " + projectURL
+	if strings.TrimSpace(description) != "" {
+		description = description + "\n\n" + footer
+	} else {
+		description = footer
 	}
 
 	localPath, mediaType, err := h.resolveLocalPath(video.MediaURL, string(video.MediaType))
@@ -87,7 +91,8 @@ func (h *TelegramHandler) PublishVideoToTelegram(c *gin.Context) {
 		return
 	}
 
-	messageID, err := h.telegramService.PublishPost(localPath, mediaType, video.Title, description, video.Tags)
+	// Заголовок в Telegram-капшн не добавляем — оставляем порядок "описание -> ссылки".
+	messageID, err := h.telegramService.PublishPost(localPath, mediaType, "", description, video.Tags)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("telegram publish: %v", err)})
 		return
