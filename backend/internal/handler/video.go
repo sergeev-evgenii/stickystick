@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"sticky-stick/backend/internal/middleware"
 	"sticky-stick/backend/internal/models"
 	"sticky-stick/backend/internal/service"
 	"sticky-stick/backend/internal/store"
@@ -16,14 +17,16 @@ type VideoHandler struct {
 	mediaService service.MediaService
 	userService  service.UserService
 	seenStore    *store.SeenStore
+	analytics    service.AnalyticsService
 }
 
-func NewVideoHandler(videoService service.VideoService, mediaService service.MediaService, userService service.UserService, seenStore *store.SeenStore) *VideoHandler {
+func NewVideoHandler(videoService service.VideoService, mediaService service.MediaService, userService service.UserService, seenStore *store.SeenStore, analytics service.AnalyticsService) *VideoHandler {
 	return &VideoHandler{
 		videoService: videoService,
 		mediaService: mediaService,
 		userService:  userService,
 		seenStore:    seenStore,
+		analytics:    analytics,
 	}
 }
 
@@ -99,6 +102,16 @@ func (h *VideoHandler) GetVideo(c *gin.Context) {
 
 	viewerKey := getViewerKey(c)
 	h.seenStore.MarkSeen(viewerKey, []uint{video.ID})
+
+	if h.analytics != nil {
+		var uid *uint
+		if idVal, ok := c.Get("userID"); ok {
+			if id, ok := idVal.(uint); ok {
+				uid = &id
+			}
+		}
+		_ = h.analytics.Log(middleware.ResolveClientIP(c), uid, models.ActionVideoView, "video", video.ID, c.Request.UserAgent())
+	}
 
 	c.JSON(http.StatusOK, video)
 }
@@ -237,6 +250,11 @@ func (h *VideoHandler) UploadMedia(c *gin.Context) {
 		return
 	}
 
+	if h.analytics != nil {
+		uid := userID
+		_ = h.analytics.Log(middleware.ResolveClientIP(c), &uid, models.ActionUpload, "video", video.ID, c.Request.UserAgent())
+	}
+
 	c.JSON(http.StatusCreated, video)
 }
 
@@ -283,6 +301,11 @@ func (h *VideoHandler) LikeVideo(c *gin.Context) {
 		return
 	}
 
+	if h.analytics != nil {
+		uid := userID
+		_ = h.analytics.Log(middleware.ResolveClientIP(c), &uid, models.ActionLike, "video", uint(id), c.Request.UserAgent())
+	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "video liked"})
 }
 
@@ -304,6 +327,11 @@ func (h *VideoHandler) UnlikeVideo(c *gin.Context) {
 	if err := h.videoService.UnlikeVideo(uint(id), userID); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+
+	if h.analytics != nil {
+		uid := userID
+		_ = h.analytics.Log(middleware.ResolveClientIP(c), &uid, models.ActionUnlike, "video", uint(id), c.Request.UserAgent())
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "video unliked"})

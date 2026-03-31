@@ -42,3 +42,14 @@ func GetClientIP(c *gin.Context) string {
 	}
 	return ""
 }
+
+// ResolveClientIP возвращает IP клиента: из контекста (если был ClientIPMiddleware), иначе из Gin, иначе "unknown".
+func ResolveClientIP(c *gin.Context) string {
+	if ip := GetClientIP(c); ip != "" {
+		return ip
+	}
+	if ip := c.ClientIP(); ip != "" {
+		return ip
+	}
+	return "unknown"
+}

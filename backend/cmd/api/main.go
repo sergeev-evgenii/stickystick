@@ -65,6 +65,8 @@ func setupRouter(h *handler.Handlers, cfg *config.Config) *gin.Engine {
 
 	// CORS middleware - должен быть первым и применяться ко всем роутам
 	router.Use(corsMiddleware())
+	// IP для аналитики и логов (X-Forwarded-For / RemoteAddr)
+	router.Use(middleware.ClientIPMiddleware())
 
 	// Увеличиваем лимит размера загружаемого файла до 500MB
 	router.MaxMultipartMemory = 500 << 20 // 500 MB
@@ -128,7 +130,7 @@ func setupRouter(h *handler.Handlers, cfg *config.Config) *gin.Engine {
 		}
 
 		// Публичная аналитика: логирование нажатия «Сгенерировать своё видео» (IP, кол-во переходов)
-		api.POST("/analytics/generate-video-click", middleware.ClientIPMiddleware(), middleware.OptionalAuthMiddleware(cfg), h.Admin.LogGenerateVideoClick)
+		api.POST("/analytics/generate-video-click", middleware.OptionalAuthMiddleware(cfg), h.Admin.LogGenerateVideoClick)
 
 		// Settings — GET публичный, PATCH только админ
 		api.GET("/settings", h.Settings.GetPublic)

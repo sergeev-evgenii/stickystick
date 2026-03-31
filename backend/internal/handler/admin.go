@@ -112,7 +112,7 @@ func (h *AdminHandler) GetAnalytics(c *gin.Context) {
 // LogGenerateVideoClick — публичный endpoint: логирует нажатие «Сгенерировать своё видео» (IP, user_id если есть) в аналитику.
 // Требует ClientIPMiddleware и опционально OptionalAuthMiddleware на роуте.
 func (h *AdminHandler) LogGenerateVideoClick(c *gin.Context) {
-	ip := middleware.GetClientIP(c)
+	ip := middleware.ResolveClientIP(c)
 	userAgent := c.Request.UserAgent()
 	var userID *uint
 	if idVal, exists := c.Get("userID"); exists {

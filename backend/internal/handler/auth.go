@@ -2,6 +2,8 @@ package handler
 
 import (
 	"net/http"
+	"sticky-stick/backend/internal/middleware"
+	"sticky-stick/backend/internal/models"
 	"sticky-stick/backend/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -9,11 +11,13 @@ import (
 
 type AuthHandler struct {
 	authService service.AuthService
+	analytics   service.AnalyticsService
 }
 
-func NewAuthHandler(authService service.AuthService) *AuthHandler {
+func NewAuthHandler(authService service.AuthService, analytics service.AnalyticsService) *AuthHandler {
 	return &AuthHandler{
 		authService: authService,
+		analytics:   analytics,
 	}
 }
 
@@ -41,6 +45,11 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
+	if h.analytics != nil {
+		uid := user.ID
+		_ = h.analytics.Log(middleware.ResolveClientIP(c), &uid, models.ActionRegister, "", 0, c.Request.UserAgent())
+	}
+
 	c.JSON(http.StatusCreated, gin.H{
 		"user":  user,
 		"token": token,
@@ -58,6 +67,11 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
+	}
+
+	if h.analytics != nil {
+		uid := user.ID
+		_ = h.analytics.Log(middleware.ResolveClientIP(c), &uid, models.ActionLogin, "", 0, c.Request.UserAgent())
 	}
 
 	c.JSON(http.StatusOK, gin.H{

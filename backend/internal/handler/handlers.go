@@ -19,9 +19,9 @@ type Handlers struct {
 
 func NewHandlers(services *service.Services, seenStore *store.SeenStore) *Handlers {
 	return &Handlers{
-		Auth:     NewAuthHandler(services.Auth),
+		Auth:     NewAuthHandler(services.Auth, services.Analytics),
 		User:     NewUserHandler(services.User),
-		Video:    NewVideoHandler(services.Video, services.Media, services.User, seenStore),
+		Video:    NewVideoHandler(services.Video, services.Media, services.User, seenStore, services.Analytics),
 		Category: NewCategoryHandler(services.Category),
 		Admin:    NewAdminHandler(services.Analytics, services.User),
 		VK:       NewVKHandler(services.VK, services.Video, services.Media, services.User, services.Settings),
